@@ -1,0 +1,9 @@
+data
+.pptx
+.csv
+__pycache__
+.idea
+venv
+notebooks
+outputs
+saved_maps
