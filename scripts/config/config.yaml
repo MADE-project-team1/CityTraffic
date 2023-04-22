@@ -5,11 +5,12 @@ dist_policy: 'const'
 sample_policy: 'const'
 max_dist: 50
 min_samples: 10
-n_users: [0,1,2,3,4]
+n_ids: [0,1,2,3,4]
 seed: 100
 measure_time: False
 draw_map: True
-user_points_range: -1
+id_points_range: -1
+load_interests: False
 model_params:
   algorithm: 'ball_tree'
   metric: 'haversine'
