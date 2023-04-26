@@ -9,6 +9,7 @@ from geopy.distance import great_circle
 from shapely.geometry import MultiPoint
 import datetime
 import os
+import geohash_hilbert as gh
 
 import hydra
 from omegaconf import OmegaConf, DictConfig, ListConfig
@@ -20,6 +21,15 @@ def get_centermost_point(cluster):
     centroid = (MultiPoint(cluster).centroid.x, MultiPoint(cluster).centroid.y)
     centermost_point = min(cluster, key=lambda point: great_circle(point, centroid).m)
     return tuple(centermost_point)
+
+def calc_summary_time(x):
+    return x['last_ts'].sum() - x['first_ts'].sum()
+
+def calc_daily_mean_time(x):
+    gb = x.groupby('log_date')[['first_ts', 'last_ts']].sum()
+    mu = (gb['last_ts'] - gb['first_ts']).mean()
+    std = (gb['last_ts'] - gb['first_ts']).std()
+    return (mu, std)
 
 
 METERS_PER_RADIAN = 6371008.8
@@ -69,7 +79,6 @@ def make_clusters(cfg: DictConfig):
     y = 'lat'
 
     city_center = cfg.city_center
-    log.info(city_center)
 
     start_global_time = time.time()
 
@@ -101,30 +110,52 @@ def make_clusters(cfg: DictConfig):
             rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats})
             result_labels = [cluster_labels[cluster_labels==n][0] for n in range(num_clusters)]
             cluster_size = [len(cluster_labels[cluster_labels==n]) for n in range(num_clusters)]
-            rs = pd.DataFrame({'id':cur_id, x:rep_points['lon'], y:rep_points['lat'],
-                                'cluster': result_labels, 'cluster_size': cluster_size})
+            geohashes = [
+                gh.encode(latlon_g[0], latlon_g[1], precision=cfg.gh_interests_prec, bits_per_char=cfg.gh_bits_per_char)
+                for latlon_g in centermost_points]
+            # [locs_cur_id[locs_cur_id['cluster'] == n] for n in range(num_clusters)]
+            mu_std = [calc_daily_mean_time(locs_cur_id[locs_cur_id['cluster'] == n]) for n in range(num_clusters)]
+            mean_daily_time = [int(mu_std[i][0]) for i in range(num_clusters)]
+            std_daily_time = [int(mu_std[i][1]) for i in range(num_clusters)]
 
-            ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
-            ids_clusters_df[['id', 'cluster', 'cluster_size']] = ids_clusters_df [['id', 'cluster', 'cluster_size']].astype(int)
+            rs = pd.DataFrame({'id':cur_id, 
+                               x:rep_points['lon'], 
+                               y:rep_points['lat'],
+                               'cluster': result_labels, 
+                               'cluster_size': cluster_size, 
+                               'geohash': geohashes,
+                               'mean_daily_time(s)': mean_daily_time,
+                               'std_daily_time(s)': std_daily_time})
+
+
         elif pd.unique(cluster_labels) != -1:
             clusters = coords
             centermost_points = get_centermost_point(clusters)
             lats, lons = centermost_points
-            log.info(f"{cur_id=}, {lons=}, {lats=}")
             rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats}, index=[0])
             result_labels = [0]
             cluster_size = len(coords)
-            rs = pd.DataFrame({'id':cur_id, x:rep_points['lon'], y:rep_points['lat'],
-                                'cluster': result_labels, 'cluster_size': cluster_size}, index=[0])
+            geohashes = [gh.encode(lats, lons, precision=cfg.gh_interests_prec, bits_per_char=cfg.gh_bits_per_char)]
             
-            ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
-            ids_clusters_df[['id', 'cluster', 'cluster_size']] = ids_clusters_df [['id', 'cluster', 'cluster_size']].astype(int)
+            rs = pd.DataFrame({'id':cur_id, 
+                                 x:rep_points['lon'],
+                                 y:rep_points['lat'],
+                                 'cluster': result_labels,
+                                 'cluster_size': cluster_size, 
+                                 'geohash':geohashes}, index=[0]
+                            )
+            
+        ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
+
 
         clusterised_locs = pd.concat([clusterised_locs, locs_cur_id], ignore_index=True)
         
         if cfg.measure_time:
             message = 'id id: {:,}\t{:,} points -> {:,} cluster(s); {:,.2f} s.'
             log.info(message.format(cur_id, len(locs_cur_id), len(rs), time.time()-start_time))
+
+    ids_clusters_df[['id', 'cluster', 'cluster_size']] = ids_clusters_df [['id', 'cluster', 'cluster_size']].astype(int)
+    ids_clusters_df[['geohash']] = ids_clusters_df[['geohash']].astype(str)
 
     if cfg.measure_time:
         message = "running time: {:,.2f} s"
