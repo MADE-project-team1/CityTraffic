@@ -14,29 +14,13 @@ import hydra
 from omegaconf import OmegaConf, DictConfig, ListConfig
 import logging
 
+from draw import draw_map
+
 def get_centermost_point(cluster):
     centroid = (MultiPoint(cluster).centroid.x, MultiPoint(cluster).centroid.y)
     centermost_point = min(cluster, key=lambda point: great_circle(point, centroid).m)
     return tuple(centermost_point)
 
-def add2map(map, latlon, cluster_id_id, cluster_number=-1, is_cluster_point=False, color='red', group=None, points_of_cluster=None):
-    if is_cluster_point:
-        icon_obj = plugins.BeautifyIcon(
-            icon='arrow-down', icon_shape='marker',
-            border_color=color, text_color=color,
-            number=cluster_id_id
-        )
-        popup_message = f"cluster: {cluster_number}\npoints: {points_of_cluster}"
-        marker = Marker(location=[latlon[0], latlon[1]], tooltip='cluster:' + str(cluster_number),
-                popup=popup_message, icon=icon_obj)
-    else:
-        marker = Marker(location=[latlon[0], latlon[1]], tooltip='cluster:' + str(cluster_number),
-                popup='cluster: ' + str(cluster_number))
-
-    if group:
-        marker.add_to(group)
-    else:
-        marker.add_to(map)
 
 METERS_PER_RADIAN = 6371008.8
 log = logging.getLogger(__name__)
@@ -44,6 +28,9 @@ log = logging.getLogger(__name__)
 
 @hydra.main(version_base=None, config_path='config', config_name='config')
 def make_clusters(cfg: DictConfig):
+
+    #initial setup and data loading
+
     launch_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     save_data_folder = f"./data/{launch_time}"
     os.mkdir(save_data_folder)
@@ -71,42 +58,30 @@ def make_clusters(cfg: DictConfig):
         MIN_SAMPLES = cfg.min_samples
 
     if cfg.n_ids == -1:
-        id_LIST = ids
+        ID_LIST = ids
     elif isinstance(cfg.n_ids, ListConfig):
-        id_LIST = OmegaConf.to_container(cfg.n_ids)
+        ID_LIST = OmegaConf.to_container(cfg.n_ids)
     else:
-        id_LIST = rng.choice(ids, size=cfg.n_ids)
+        ID_LIST = rng.choice(ids, size=cfg.n_ids)
 
     epsilon = MAX_DIST_M / METERS_PER_RADIAN
     x = 'lon'
     y = 'lat'
 
-    city_center = locs[[y, x]].mean()
-
-    if cfg.draw_map:
-        basic_map = Map(
-            location=[city_center.lat, city_center.lon],
-            zoom_start=12,
-            tiles='OpenStreetMap',
-            control_scale=True,
-            prefer_canvas=True,
-            )
-        
-        Measure_Control = plugins.MeasureControl(
-            primary_length_unit='meters', 
-            primary_area_unit='sqmeters', 
-        )
-    else:
-        basic_map = None
+    city_center = cfg.city_center
+    log.info(city_center)
 
     start_global_time = time.time()
 
+    #ids_clusters_df: DataFrame of all cluster centers
     ids_clusters_df = pd.DataFrame({'id' : [], 'lat' : [], 'lon' : [], 'cluster' : []})
+
+    #ids_clusters_df: initial DataFrame with cluster labels assigned to every loc point
     clusterised_locs = pd.DataFrame(columns=locs.columns)
     clusterised_locs['is_weekday'] = clusterised_locs['is_weekday'].astype(bool)
     clusterised_locs['cluster'] = pd.Series(dtype='int')
 
-    for cur_id in id_LIST:
+    for cur_id in ID_LIST:
         locs_cur_id = locs[locs['id'] == cur_id].copy()
         start_time = time.time()
         coords = locs_cur_id[[y, x]].values 
@@ -124,39 +99,32 @@ def make_clusters(cfg: DictConfig):
 
             lats, lons = zip(*centermost_points)
             rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats})
-            result_labels = list(range(num_clusters))
-            rs = pd.DataFrame({'id':cur_id, x:rep_points['lon'], y:rep_points['lat'], 'cluster': result_labels})
+            result_labels = [cluster_labels[cluster_labels==n][0] for n in range(num_clusters)]
+            cluster_size = [len(cluster_labels[cluster_labels==n]) for n in range(num_clusters)]
+            rs = pd.DataFrame({'id':cur_id, x:rep_points['lon'], y:rep_points['lat'],
+                                'cluster': result_labels, 'cluster_size': cluster_size})
 
             ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
-            ids_clusters_df[['id', 'cluster']] = ids_clusters_df [['id', 'cluster']].astype(int)
+            ids_clusters_df[['id', 'cluster', 'cluster_size']] = ids_clusters_df [['id', 'cluster', 'cluster_size']].astype(int)
+        elif pd.unique(cluster_labels) != -1:
+            clusters = coords
+            centermost_points = get_centermost_point(clusters)
+            lats, lons = centermost_points
+            log.info(f"{cur_id=}, {lons=}, {lats=}")
+            rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats}, index=[0])
+            result_labels = [0]
+            cluster_size = len(coords)
+            rs = pd.DataFrame({'id':cur_id, x:rep_points['lon'], y:rep_points['lat'],
+                                'cluster': result_labels, 'cluster_size': cluster_size}, index=[0])
+            
+            ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
+            ids_clusters_df[['id', 'cluster', 'cluster_size']] = ids_clusters_df [['id', 'cluster', 'cluster_size']].astype(int)
 
         clusterised_locs = pd.concat([clusterised_locs, locs_cur_id], ignore_index=True)
         
         if cfg.measure_time:
             message = 'id id: {:,}\t{:,} points -> {:,} cluster(s); {:,.2f} s.'
             log.info(message.format(cur_id, len(locs_cur_id), len(rs), time.time()-start_time))
-        
-        if cfg.draw_map:
-            if rs is not None:
-                map_clusters = folium.FeatureGroup(name=f"clusters of id  {cur_id} ({len(rs)})", show=False)
-                basic_map.add_child(map_clusters)
-                for index, row in rs.iterrows():
-                    lat, lon = float(row['lat']), float(row['lon'])
-                    cluster_number = int(row['cluster'])
-                    add2map(basic_map, [lat, lon],  int(cur_id), cluster_number=cluster_number, group=map_clusters,
-                           is_cluster_point=True, points_of_cluster=len(clusters[cluster_number]))
-
-            all_locations = folium.FeatureGroup(name=f"locs of id {cur_id} ({len(locs_cur_id)})" , show=False)
-            basic_map.add_child(all_locations)
-            for index, row in locs_cur_id.iterrows():
-                lat, lon = float(row['lat']), float(row['lon'])
-                cluster_number = int(row['cluster'])
-                add2map(basic_map, [lat, lon], int(cur_id), cluster_number=cluster_number, group=all_locations)
-
-    if cfg.draw_map:
-        folium.LayerControl().add_to(basic_map);
-        MousePosition().add_to(basic_map);
-        basic_map.save(save_data_folder + f"/map_{launch_time}.html")
 
     if cfg.measure_time:
         message = "running time: {:,.2f} s"
@@ -166,11 +134,14 @@ def make_clusters(cfg: DictConfig):
     clusterised_locs.to_csv(save_data_folder + f"/data_with_clusters_{launch_time}.csv");
 
     if cfg.load_interests:
-        ids_interests = interests[interests['id'].isin(id_LIST)].copy()
+        ids_interests = interests[interests['id'].isin(ID_LIST)].copy()
         ids_interests.index = ids_interests['id']
         ids_interests.drop(['id'], axis=1, inplace=True)
         ids_interests.sort_index(inplace=True)
         ids_interests.T.to_csv(save_data_folder + f"/selected_ids_interests_{launch_time}.csv");
+
+    if cfg.draw_map:
+        draw_map(save_data_folder, launch_time, cfg, log=log)
 
 
 if __name__ == "__main__":

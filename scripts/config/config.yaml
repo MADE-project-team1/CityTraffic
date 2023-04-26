@@ -8,6 +8,9 @@ min_samples: 10
 n_ids: [0,1,2,3,4]
 seed: 100
 measure_time: False
+city_center:
+  lat: 54.885288
+  lon: 38.087027
 draw_map: True
 id_points_range: -1
 load_interests: False
