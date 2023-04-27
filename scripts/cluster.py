@@ -175,5 +175,6 @@ def make_clusters(cfg: DictConfig):
         draw_map(save_data_folder, launch_time, cfg, log=log)
 
 
+
 if __name__ == "__main__":
     make_clusters()

@@ -2,20 +2,12 @@ import folium
 from folium import Map, plugins, Marker
 from folium.plugins import MousePosition
 import pandas as pd
-import numpy as np
-import time
-from sklearn.cluster import DBSCAN
-from geopy.distance import great_circle
-from shapely.geometry import MultiPoint
-import datetime
-import os
 import geohash_hilbert as gh
+from omegaconf import DictConfig
+from geohash_stupino import add_geohash, add_geohash_grid
 
-import hydra
-from omegaconf import OmegaConf, DictConfig, ListConfig
-import logging
 
-def add2map(map, latlon, cluster_id_id, cluster_number=-1, is_cluster_point=False, color='blue', group=None, points_of_cluster=None):
+def add2map(map, latlon, cluster_id_id, cluster_number=-1, is_cluster_point=False, color='#116062', group=None, points_of_cluster=None):
     if is_cluster_point:
         icon_obj = plugins.BeautifyIcon(
             icon='arrow-down', icon_shape='marker',
@@ -33,18 +25,6 @@ def add2map(map, latlon, cluster_id_id, cluster_number=-1, is_cluster_point=Fals
         marker.add_to(group)
     else:
         marker.add_to(map)
-
-def add_geohash(map, hash, bits_per_char):
-    rect = gh.rectangle(hash, bits_per_char=bits_per_char)
-    bounds = rect['geometry']['coordinates'][0]
-    folium.Polygon(
-        bounds,
-        color='blue',
-        fill_color='white',
-        weight=2,
-        popup=hash,
-        fill_opacity=0.5
-    ).add_to(map)
 
 
 def draw_map(save_data_folder: str, launch_time:str, cfg: DictConfig, log=None):
@@ -94,8 +74,15 @@ def draw_map(save_data_folder: str, launch_time:str, cfg: DictConfig, log=None):
                 lat, lon = float(row['lat']), float(row['lon'])
                 cluster_number = int(row['cluster'])
                 add2map(basic_map, [lat, lon], int(cur_id), cluster_number=cluster_number, group=all_locations)
+    
+    if cfg.draw_gh:
+        gh_grid = folium.FeatureGroup(name=f"Geohash grid" , show=False)
+        basic_map.add_child(gh_grid)
+        add_geohash_grid(gh_grid, cfg.city_bbox, cfg.gh_interests_prec, cfg.gh_bits_per_char)
 
     if cfg.draw_map:
         folium.LayerControl().add_to(basic_map);
         MousePosition().add_to(basic_map);
         basic_map.save(save_data_folder + f"/map_{launch_time}.html")
+    
+

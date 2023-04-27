@@ -1,22 +1,32 @@
 locs_path: 'data/stupino_locs.csv'
 interests_path: 'data/stupino_interests.csv'
+measure_time: False
+n_ids: [0,1,2,3,4]
+seed: 100
+id_points_range: -1
+load_interests: False
+
+
+
+draw_map: True
+draw_gh: True
+gh_interests_prec: 18
+gh_matrix_prec: 16
+gh_bits_per_char: 2
+
+city_center:
+  lat: 54.885288
+  lon: 38.087027
+
+city_bbox:
+  lu: [54.943331, 37.991275]
+  rl: [54.840498, 38.214812]
+
 model: DBSCAN
 dist_policy: 'const'
 sample_policy: 'const'
 max_dist: 50
 min_samples: 10
-n_ids: [0,1,2,3,4]
-seed: 100
-measure_time: False
-gh_interests_prec: 18
-gh_matrix_prec: 16
-gh_bits_per_char: 2
-city_center:
-  lat: 54.885288
-  lon: 38.087027
-draw_map: True
-id_points_range: -1
-load_interests: False
 model_params:
   algorithm: 'ball_tree'
   metric: 'haversine'

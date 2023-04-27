@@ -1,1 +1,2 @@
 import draw
+import geohash_stupino
