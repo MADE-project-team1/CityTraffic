@@ -1,0 +1,8 @@
+gh_interests_prec: 18
+gh_matrix_prec: 16
+gh_bits_per_char: 2
+
+city_center:
+  lat: 54.885288
+  lon: 38.087027
+

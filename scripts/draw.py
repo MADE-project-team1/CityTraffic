@@ -66,7 +66,8 @@ def draw_map(save_data_folder: str, launch_time:str, cfg: DictConfig, log=None):
                     points_of_cluster = row['cluster_size']
                     add2map(basic_map, [lat, lon],  int(cur_id), cluster_number=cluster_number, group=map_clusters,
                             is_cluster_point=True, points_of_cluster=points_of_cluster)
-                    add_geohash(basic_map, row['geohash'], bits_per_char=cfg.gh_bits_per_char)
+                    if cfg.draw_gh:
+                        add_geohash(basic_map, row['geohash'], bits_per_char=cfg.gh_bits_per_char)
 
             all_locations = folium.FeatureGroup(name=f"locs of id {cur_id} ({len(locs_cur_id)})" , show=False)
             basic_map.add_child(all_locations)

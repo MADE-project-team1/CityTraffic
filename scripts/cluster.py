@@ -27,12 +27,25 @@ def calc_summary_time(x):
 
 def calc_daily_mean_time(x):
     gb = x.groupby('log_date')[['first_ts', 'last_ts']].sum()
-    mu = (gb['last_ts'] - gb['first_ts']).mean()
-    std = (gb['last_ts'] - gb['first_ts']).std()
+    gb_diff = gb['last_ts'] - gb['first_ts']
+    log.info(gb_diff)
+    gb_diff = gb_diff[gb_diff > 60]
+    mu = gb_diff.mean()
+    std = gb_diff.std()
+
+    if np.isnan(mu):
+        if len(gb_diff) > 0:
+            mu = gb_diff[0]
+        else:
+            mu = 0
+    if np.isnan(std):
+        std = 0
+
     return (mu, std)
 
 
 METERS_PER_RADIAN = 6371008.8
+DAYS_IN_WEEK = 7
 log = logging.getLogger(__name__)
 
 
@@ -114,19 +127,23 @@ def make_clusters(cfg: DictConfig):
                 gh.encode(latlon_g[0], latlon_g[1], precision=cfg.gh_interests_prec, bits_per_char=cfg.gh_bits_per_char)
                 for latlon_g in centermost_points]
             # [locs_cur_id[locs_cur_id['cluster'] == n] for n in range(num_clusters)]
-            mu_std = [calc_daily_mean_time(locs_cur_id[locs_cur_id['cluster'] == n]) for n in range(num_clusters)]
-            mean_daily_time = [int(mu_std[i][0]) for i in range(num_clusters)]
-            std_daily_time = [int(mu_std[i][1]) for i in range(num_clusters)]
 
             rs = pd.DataFrame({'id':cur_id, 
-                               x:rep_points['lon'], 
-                               y:rep_points['lat'],
-                               'cluster': result_labels, 
-                               'cluster_size': cluster_size, 
-                               'geohash': geohashes,
-                               'mean_daily_time(s)': mean_daily_time,
-                               'std_daily_time(s)': std_daily_time})
+                    x:rep_points['lon'], 
+                    y:rep_points['lat'],
+                    'cluster': result_labels, 
+                    'cluster_size': cluster_size, 
+                    'geohash': geohashes,
+                    })
 
+            id_data_day = locs_cur_id['log_date'].apply(lambda x: pd.to_datetime(x).weekday())           
+            for day_number in range(DAYS_IN_WEEK):
+                cur_day_data = locs_cur_id[id_data_day == day_number]
+                mu_std = [calc_daily_mean_time(cur_day_data[cur_day_data['cluster'] == n]) for n in range(num_clusters)]
+                mean_daily_time = [int(mu_std[i][0]) for i in range(num_clusters)]
+                std_daily_time = [int(mu_std[i][1]) for i in range(num_clusters)]
+                rs[f"mean_daily_time_{day_number}"] = mean_daily_time
+                rs[f"std_daily_time_{day_number}"] = std_daily_time
 
         elif pd.unique(cluster_labels) != -1:
             clusters = coords
@@ -144,6 +161,15 @@ def make_clusters(cfg: DictConfig):
                                  'cluster_size': cluster_size, 
                                  'geohash':geohashes}, index=[0]
                             )
+            
+            id_data_day = locs_cur_id['log_date'].apply(lambda x: pd.to_datetime(x).weekday())           
+            for day_number in range(DAYS_IN_WEEK):
+                cur_day_data = locs_cur_id[id_data_day == day_number]
+                mu_std = calc_daily_mean_time(cur_day_data[cur_day_data['cluster'] == 0])
+                mean_daily_time = int(mu_std[0])
+                std_daily_time = int(mu_std[1])
+                rs[f"mean_daily_time_{day_number}"] = mean_daily_time
+                rs[f"std_daily_time_{day_number}"] = std_daily_time
             
         ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
 

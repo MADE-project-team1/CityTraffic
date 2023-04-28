@@ -9,7 +9,7 @@ load_interests: False
 
 
 draw_map: True
-draw_gh: True
+draw_gh: False
 gh_interests_prec: 18
 gh_matrix_prec: 16
 gh_bits_per_char: 2
@@ -25,8 +25,8 @@ city_bbox:
 model: DBSCAN
 dist_policy: 'const'
 sample_policy: 'const'
-max_dist: 50
-min_samples: 10
+max_dist: 30
+min_samples: 15
 model_params:
   algorithm: 'ball_tree'
   metric: 'haversine'
