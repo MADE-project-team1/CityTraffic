@@ -1,6 +1,6 @@
-import folium
-from folium import Map, plugins, Marker
-from folium.plugins import MousePosition
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 import pandas as pd
 import numpy as np
 import time
@@ -9,7 +9,6 @@ from geopy.distance import great_circle
 from shapely.geometry import MultiPoint
 import datetime
 import os
-import geohash_hilbert as gh
 
 import hydra
 from omegaconf import OmegaConf, DictConfig, ListConfig
@@ -23,25 +22,15 @@ def get_centermost_point(cluster):
     centermost_point = min(cluster, key=lambda point: great_circle(point, centroid).m)
     return tuple(centermost_point)
 
-def calc_summary_time(x):
-    return x['last_ts'].sum() - x['first_ts'].sum()
+def map_slot(x, number_of_slots):
+    if x >= number_of_slots // 2:
+        return number_of_slots - x
+    return x
 
-def calc_daily_mean_time(x, thresh):
-    gb = x.groupby('log_date')[['first_ts', 'last_ts']].sum()
-    gb_diff = gb['last_ts'] - gb['first_ts']
-    gb_diff = gb_diff[gb_diff > thresh]
-    mu = gb_diff.mean()
-    std = gb_diff.std()
-
-    if np.isnan(mu):
-        if len(gb_diff) > 0:
-            mu = gb_diff[0]
-        else:
-            mu = 0
-    if np.isnan(std):
-        std = 0
-
-    return (mu, std)
+def get_slots(x, slot_len, number_of_slots):
+    hm = pd.to_datetime(x, unit='s').dt.strftime('%H:%M').str.split(':')
+    return hm.apply(lambda x: map_slot(
+            (60 * int(x[0]) + int(x[1])) // slot_len, number_of_slots))
 
 
 METERS_PER_RADIAN = 6371008.8
@@ -70,14 +59,15 @@ def make_clusters(cfg: DictConfig):
         else:
             bounds = [0, np.inf]
 
-    unique_id = pd.unique(locs['id'])
-    ids = unique_id[locs['id'].value_counts().between(*bounds)]
+    ids = pd.unique(locs['id'])
 
     if cfg.dist_policy == 'const':
         MAX_DIST_M = cfg.max_dist
-
-    if cfg.sample_policy == 'const':
-        MIN_SAMPLES = cfg.min_samples
+    
+    if cfg.only_hw:
+        denom = cfg.min_sample_hw
+    else:
+        denom = cfg.min_sample_interest
 
     if cfg.n_ids == -1:
         ID_LIST = ids
@@ -91,6 +81,8 @@ def make_clusters(cfg: DictConfig):
     #short naming
     x = 'lon'
     y = 'lat'
+    
+    columns=['lat', 'lon', 'ts', 'id', 'length']
 
     city_center = cfg.city_center
 
@@ -100,79 +92,69 @@ def make_clusters(cfg: DictConfig):
     ids_clusters_df = pd.DataFrame({'id' : [], 'lat' : [], 'lon' : [], 'cluster' : []})
 
     #clusterised_locs: initial DataFrame with cluster labels assigned to every loc point
-    clusterised_locs = pd.DataFrame(columns=locs.columns)
-    clusterised_locs['is_weekday'] = clusterised_locs['is_weekday'].astype(bool)
+    clusterised_locs = pd.DataFrame(columns=columns)
     clusterised_locs['cluster'] = pd.Series(dtype='int')
 
     for cur_id in ID_LIST:
-        #locs_cur_id: locations of current id
-        locs_cur_id = locs[locs['id'] == cur_id].copy()
-        start_time = time.time()
-        coords = locs_cur_id[[y, x]].values 
+        cur_id_df = locs.query('id == @cur_id')
+        if cur_id_df['cnt'].sum() > bounds[1]:
+            continue
+        new_id_df = np.empty((0, len(columns)))
 
+        for index, row in cur_id_df.iterrows():
+            cnt = row['cnt']
+            first_ts = row['first_ts']
+            last_ts = row['last_ts']
+            log_date = row['log_date']
+            lats =  np.ones((cnt, 1)) * row['lat']
+            lons =  np.ones((cnt, 1)) * row['lon']
+            ids = np.ones((cnt, 1)) * cur_id
+            points = np.linspace(first_ts, last_ts, cnt).reshape(((cnt, 1)))
+            lengths = np.ones((cnt, 1)) * ((last_ts - first_ts) / cnt)
+            values = np.hstack([lats, lons, points, ids, lengths])
+            new_id_df = np.vstack([new_id_df, values])
+
+            
+        new_id_df = pd.DataFrame(data=new_id_df,
+                columns=columns)
+        
+        func = lambda x: get_slots(x, cfg.slot_len, cfg.number_of_slots)
+        new_id_df['slot'] = new_id_df[['ts']].apply(func).values
+        new_id_df['log_date'] = pd.to_datetime(new_id_df['ts'], unit='s').dt.strftime('%Y-%m-%d')
+        
+        coords = new_id_df[['lat', 'lon']].values
+        
+        MIN_SAMPLES = max(new_id_df.shape[0] // denom, 100)
+        # log.info(f"{cur_id}: {coords.shape}")
         db = DBSCAN(eps=epsilon, min_samples=MIN_SAMPLES, **cfg.model_params).fit(np.radians(coords))
+        new_id_df['cluster'] = db.labels_
 
-        #labels for current id
-        cluster_labels = db.labels_
-        locs_cur_id['cluster'] = cluster_labels
-        num_clusters = len(set(cluster_labels)) - 1
-        
-        #rs: resulting DataFrame for clusters
-        rs = None
-        
-        if num_clusters > 0:
-            clusters = pd.Series([coords[cluster_labels==n] for n in range(num_clusters)])
+        clusters_list = pd.unique(new_id_df['cluster'][new_id_df['cluster'] != -1])
+        if len(clusters_list) > 0:
+            clusters = pd.Series([coords[db.labels_== c] for c in clusters_list])
+            mean_slot = pd.Series([new_id_df['slot'][db.labels_== c].mean() for c in clusters_list])
+            home_place = mean_slot.between(cfg.home_b, cfg.home_t)
             centermost_points = clusters.map(get_centermost_point)
             lats, lons = zip(*centermost_points)
             rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats})
-            result_labels = [cluster_labels[cluster_labels==n][0] for n in range(num_clusters)]
-            cluster_size = [len(cluster_labels[cluster_labels==n]) for n in range(num_clusters)]
-            geohashes = [
-                gh.encode(latlon_g[0], latlon_g[1], precision=cfg.gh_interests_prec, bits_per_char=cfg.gh_bits_per_char)
-                for latlon_g in centermost_points]
-
+            result_labels = [db.labels_[db.labels_== c][0] for c in clusters_list]
+            cluster_size = [len(db.labels_[db.labels_== c]) for c in clusters_list]
 
             rs = pd.DataFrame({'id':cur_id, 
                     x:rep_points['lon'], 
                     y:rep_points['lat'],
                     'cluster': result_labels, 
-                    'cluster_size': cluster_size, 
-                    'geohash': geohashes,
+                    'cluster_size': cluster_size,
+                    'mean_slot' : mean_slot,
+                    'home_place' : home_place
                     })
-        
-        #if there is the only one class - it's easier to rewrite the code
-        elif pd.unique(cluster_labels) != -1:
-            clusters = coords
-            centermost_points = get_centermost_point(clusters)
-            lats, lons = centermost_points
-            rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats}, index=[0])
-            result_labels = [0]
-            cluster_size = len(coords)
-            geohashes = [gh.encode(lats, lons, precision=cfg.gh_interests_prec, bits_per_char=cfg.gh_bits_per_char)]
-            
-            rs = pd.DataFrame({'id':cur_id, 
-                                 x:rep_points['lon'],
-                                 y:rep_points['lat'],
-                                 'cluster': result_labels,
-                                 'cluster_size': cluster_size, 
-                                 'geohash':geohashes}, index=[0]
-                            )
-                              
-        ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
+            rs['home_place'] = rs['home_place'].astype(bool)
 
 
-        clusterised_locs = pd.concat([clusterised_locs, locs_cur_id], ignore_index=True)
-        
-        if cfg.measure_time:
-            message = 'id id: {:,}\t{:,} points -> {:,} cluster(s); {:,.2f} s.'
-            log.info(message.format(cur_id, len(locs_cur_id), len(rs), time.time()-start_time))
+            ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
 
-    ids_clusters_df[['id', 'cluster', 'cluster_size']] = ids_clusters_df [['id', 'cluster', 'cluster_size']].astype(int)
-    ids_clusters_df[['geohash']] = ids_clusters_df[['geohash']].astype(str)
+        clusterised_locs = pd.concat([clusterised_locs, new_id_df], ignore_index=True)
 
-    if cfg.measure_time:
-        message = "running time: {:,.2f} s"
-        log.info(message.format(time.time() - start_global_time))
 
     ids_clusters_df.to_csv(save_data_folder + f"/clusters_{launch_time}.csv", index=False);
     clusterised_locs.to_csv(save_data_folder + f"/data_with_clusters_{launch_time}.csv");
