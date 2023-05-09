@@ -3,9 +3,10 @@ interests_path: 'data/stupino_interests.csv'
 measure_time: False
 n_ids: -1
 seed: 1000
-id_points_range: [100, 100000000000000000]
+id_points_range: 50000
 load_interests: False
 interval_thresh: 0
+
 
 draw_map: False
 draw_gh: False
@@ -28,12 +29,15 @@ number_of_slots: 48
 slot_len: 30
 min_days: 5
 drop_noise: True
+home_b: 12
+home_t: 15
 
 model: DBSCAN
 dist_policy: 'const'
-sample_policy: 'const'
-max_dist: 50
-min_samples: 15
+only_hw: True
+min_sample_hw: 6
+min_sample_interest: 30
+max_dist: 60
 model_params:
   algorithm: 'ball_tree'
   metric: 'haversine'
