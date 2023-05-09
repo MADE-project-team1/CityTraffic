@@ -1,14 +1,13 @@
 locs_path: 'data/stupino_locs.csv'
 interests_path: 'data/stupino_interests.csv'
 measure_time: False
-n_ids: [0,1,2,3,4]
-seed: 100
-id_points_range: -1
+n_ids: -1
+seed: 1000
+id_points_range: [100, 100000000000000000]
 load_interests: False
+interval_thresh: 0
 
-
-
-draw_map: True
+draw_map: False
 draw_gh: False
 gh_interests_prec: 18
 gh_matrix_prec: 16
@@ -22,10 +21,18 @@ city_bbox:
   lu: [54.943331, 37.991275]
   rl: [54.840498, 38.214812]
 
+cluster_data_path: None
+only_weekday: False
+min_slots: 16
+number_of_slots: 48
+slot_len: 30
+min_days: 5
+drop_noise: True
+
 model: DBSCAN
 dist_policy: 'const'
 sample_policy: 'const'
-max_dist: 30
+max_dist: 50
 min_samples: 15
 model_params:
   algorithm: 'ball_tree'

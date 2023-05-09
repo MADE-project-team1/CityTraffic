@@ -17,6 +17,7 @@ import logging
 
 from draw import draw_map
 
+#gets cluster latlons and returns its center
 def get_centermost_point(cluster):
     centroid = (MultiPoint(cluster).centroid.x, MultiPoint(cluster).centroid.y)
     centermost_point = min(cluster, key=lambda point: great_circle(point, centroid).m)
@@ -25,11 +26,10 @@ def get_centermost_point(cluster):
 def calc_summary_time(x):
     return x['last_ts'].sum() - x['first_ts'].sum()
 
-def calc_daily_mean_time(x):
+def calc_daily_mean_time(x, thresh):
     gb = x.groupby('log_date')[['first_ts', 'last_ts']].sum()
     gb_diff = gb['last_ts'] - gb['first_ts']
-    log.info(gb_diff)
-    gb_diff = gb_diff[gb_diff > 60]
+    gb_diff = gb_diff[gb_diff > thresh]
     mu = gb_diff.mean()
     std = gb_diff.std()
 
@@ -45,7 +45,6 @@ def calc_daily_mean_time(x):
 
 
 METERS_PER_RADIAN = 6371008.8
-DAYS_IN_WEEK = 7
 log = logging.getLogger(__name__)
 
 
@@ -88,6 +87,8 @@ def make_clusters(cfg: DictConfig):
         ID_LIST = rng.choice(ids, size=cfg.n_ids)
 
     epsilon = MAX_DIST_M / METERS_PER_RADIAN
+
+    #short naming
     x = 'lon'
     y = 'lat'
 
@@ -98,27 +99,30 @@ def make_clusters(cfg: DictConfig):
     #ids_clusters_df: DataFrame of all cluster centers
     ids_clusters_df = pd.DataFrame({'id' : [], 'lat' : [], 'lon' : [], 'cluster' : []})
 
-    #ids_clusters_df: initial DataFrame with cluster labels assigned to every loc point
+    #clusterised_locs: initial DataFrame with cluster labels assigned to every loc point
     clusterised_locs = pd.DataFrame(columns=locs.columns)
     clusterised_locs['is_weekday'] = clusterised_locs['is_weekday'].astype(bool)
     clusterised_locs['cluster'] = pd.Series(dtype='int')
 
     for cur_id in ID_LIST:
+        #locs_cur_id: locations of current id
         locs_cur_id = locs[locs['id'] == cur_id].copy()
         start_time = time.time()
         coords = locs_cur_id[[y, x]].values 
+
         db = DBSCAN(eps=epsilon, min_samples=MIN_SAMPLES, **cfg.model_params).fit(np.radians(coords))
+
+        #labels for current id
         cluster_labels = db.labels_
         locs_cur_id['cluster'] = cluster_labels
         num_clusters = len(set(cluster_labels)) - 1
         
+        #rs: resulting DataFrame for clusters
         rs = None
         
         if num_clusters > 0:
             clusters = pd.Series([coords[cluster_labels==n] for n in range(num_clusters)])
-            noise = pd.Series([coords[cluster_labels==-1]])
             centermost_points = clusters.map(get_centermost_point)
-
             lats, lons = zip(*centermost_points)
             rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats})
             result_labels = [cluster_labels[cluster_labels==n][0] for n in range(num_clusters)]
@@ -126,7 +130,7 @@ def make_clusters(cfg: DictConfig):
             geohashes = [
                 gh.encode(latlon_g[0], latlon_g[1], precision=cfg.gh_interests_prec, bits_per_char=cfg.gh_bits_per_char)
                 for latlon_g in centermost_points]
-            # [locs_cur_id[locs_cur_id['cluster'] == n] for n in range(num_clusters)]
+
 
             rs = pd.DataFrame({'id':cur_id, 
                     x:rep_points['lon'], 
@@ -135,16 +139,8 @@ def make_clusters(cfg: DictConfig):
                     'cluster_size': cluster_size, 
                     'geohash': geohashes,
                     })
-
-            id_data_day = locs_cur_id['log_date'].apply(lambda x: pd.to_datetime(x).weekday())           
-            for day_number in range(DAYS_IN_WEEK):
-                cur_day_data = locs_cur_id[id_data_day == day_number]
-                mu_std = [calc_daily_mean_time(cur_day_data[cur_day_data['cluster'] == n]) for n in range(num_clusters)]
-                mean_daily_time = [int(mu_std[i][0]) for i in range(num_clusters)]
-                std_daily_time = [int(mu_std[i][1]) for i in range(num_clusters)]
-                rs[f"mean_daily_time_{day_number}"] = mean_daily_time
-                rs[f"std_daily_time_{day_number}"] = std_daily_time
-
+        
+        #if there is the only one class - it's easier to rewrite the code
         elif pd.unique(cluster_labels) != -1:
             clusters = coords
             centermost_points = get_centermost_point(clusters)
@@ -161,16 +157,7 @@ def make_clusters(cfg: DictConfig):
                                  'cluster_size': cluster_size, 
                                  'geohash':geohashes}, index=[0]
                             )
-            
-            id_data_day = locs_cur_id['log_date'].apply(lambda x: pd.to_datetime(x).weekday())           
-            for day_number in range(DAYS_IN_WEEK):
-                cur_day_data = locs_cur_id[id_data_day == day_number]
-                mu_std = calc_daily_mean_time(cur_day_data[cur_day_data['cluster'] == 0])
-                mean_daily_time = int(mu_std[0])
-                std_daily_time = int(mu_std[1])
-                rs[f"mean_daily_time_{day_number}"] = mean_daily_time
-                rs[f"std_daily_time_{day_number}"] = std_daily_time
-            
+                              
         ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
 
 
