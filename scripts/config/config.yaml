@@ -3,7 +3,7 @@ interests_path: 'data/stupino_interests.csv'
 measure_time: False
 n_ids: -1
 seed: 1000
-id_points_range: 50000
+id_points_range: 30000
 load_interests: False
 interval_thresh: 0
 
