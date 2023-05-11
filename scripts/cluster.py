@@ -16,6 +16,8 @@ import logging
 
 from draw import draw_map
 
+from tqdm import tqdm
+
 #gets cluster latlons and returns its center
 def get_centermost_point(cluster):
     centroid = (MultiPoint(cluster).centroid.x, MultiPoint(cluster).centroid.y)
@@ -48,8 +50,6 @@ def make_clusters(cfg: DictConfig):
     rng = np.random.default_rng(seed=cfg.seed)
 
     locs = pd.read_csv(cfg.locs_path)
-    interests = pd.read_csv(cfg.interests_path)
-
 
     if isinstance(cfg.id_points_range, ListConfig):
         bounds = OmegaConf.to_container(cfg.id_points_range)
@@ -95,7 +95,7 @@ def make_clusters(cfg: DictConfig):
     clusterised_locs = pd.DataFrame(columns=columns)
     clusterised_locs['cluster'] = pd.Series(dtype='int')
 
-    for cur_id in ID_LIST:
+    for cur_id in tqdm(ID_LIST):
         cur_id_df = locs.query('id == @cur_id')
         if cur_id_df['cnt'].sum() > bounds[1]:
             continue

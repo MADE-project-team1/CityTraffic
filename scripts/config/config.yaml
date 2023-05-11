@@ -1,9 +1,11 @@
-locs_path: 'data/stupino_locs.csv'
+locs_path: 'data/cleaned_locs.csv'
 interests_path: 'data/stupino_interests.csv'
 measure_time: False
 n_ids: -1
 seed: 1000
-id_points_range: 30000
+id_points_range: 
+ - 100
+ - 30000
 load_interests: False
 interval_thresh: 0
 
@@ -26,6 +28,8 @@ cluster_data_path: None
 only_weekday: False
 min_slots: 16
 number_of_slots: 48
+min_time_day_thresh: 28800
+min_days_thresh: 5
 slot_len: 30
 min_days: 5
 drop_noise: True
