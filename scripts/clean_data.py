@@ -52,7 +52,7 @@ def clean(cfg: DictConfig):
                 filtered_data = cur_id_df[cur_id_df['log_date'].isin(days.index)]
                 new_df = pd.concat([new_df, filtered_data])
     
-    new_df.to_csv(f'cleaned_locs_data_{cfg.min_time_day_thresh}_{cfg.min_days_thresh}.csv')
+    new_df.to_csv(f'data/cleaned_locs_data_{cfg.min_time_day_thresh}_{cfg.min_days_thresh}.csv')
 
 if __name__ == '__main__':
     clean()

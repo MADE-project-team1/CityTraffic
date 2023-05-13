@@ -38,7 +38,7 @@ def make_clusters(cfg: DictConfig):
     os.mkdir(save_data_folder)
     rng = np.random.default_rng(seed=cfg.seed)
 
-    locs = pd.read_csv(cfg.locs_path)
+    locs = pd.read_csv(cfg.cleaned_locs_path)
 
     if isinstance(cfg.id_points_range, ListConfig):
         bounds = OmegaConf.to_container(cfg.id_points_range)
