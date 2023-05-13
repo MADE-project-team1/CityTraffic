@@ -24,17 +24,6 @@ def get_centermost_point(cluster):
     centermost_point = min(cluster, key=lambda point: great_circle(point, centroid).m)
     return tuple(centermost_point)
 
-def map_slot(x, number_of_slots):
-    if x >= number_of_slots // 2:
-        return number_of_slots - x
-    return x
-
-def get_slots(x, slot_len, number_of_slots):
-    hm = pd.to_datetime(x, unit='s').dt.strftime('%H:%M').str.split(':')
-    return hm.apply(lambda x: map_slot(
-            (60 * int(x[0]) + int(x[1])) // slot_len, number_of_slots))
-
-
 METERS_PER_RADIAN = 6371008.8
 log = logging.getLogger(__name__)
 
@@ -105,7 +94,6 @@ def make_clusters(cfg: DictConfig):
             cnt = row['cnt']
             first_ts = row['first_ts']
             last_ts = row['last_ts']
-            log_date = row['log_date']
             lats =  np.ones((cnt, 1)) * row['lat']
             lons =  np.ones((cnt, 1)) * row['lon']
             ids = np.ones((cnt, 1)) * cur_id
@@ -118,8 +106,6 @@ def make_clusters(cfg: DictConfig):
         new_id_df = pd.DataFrame(data=new_id_df,
                 columns=columns)
         
-        func = lambda x: get_slots(x, cfg.slot_len, cfg.number_of_slots)
-        new_id_df['slot'] = new_id_df[['ts']].apply(func).values
         new_id_df['log_date'] = pd.to_datetime(new_id_df['ts'], unit='s').dt.strftime('%Y-%m-%d')
         
         coords = new_id_df[['lat', 'lon']].values
@@ -132,8 +118,6 @@ def make_clusters(cfg: DictConfig):
         clusters_list = pd.unique(new_id_df['cluster'][new_id_df['cluster'] != -1])
         if len(clusters_list) > 0:
             clusters = pd.Series([coords[db.labels_== c] for c in clusters_list])
-            mean_slot = pd.Series([new_id_df['slot'][db.labels_== c].mean() for c in clusters_list])
-            home_place = mean_slot.between(cfg.home_b, cfg.home_t)
             centermost_points = clusters.map(get_centermost_point)
             lats, lons = zip(*centermost_points)
             rep_points = pd.DataFrame({'id':cur_id, x:lons, y:lats})
@@ -145,11 +129,7 @@ def make_clusters(cfg: DictConfig):
                     y:rep_points['lat'],
                     'cluster': result_labels, 
                     'cluster_size': cluster_size,
-                    'mean_slot' : mean_slot,
-                    'home_place' : home_place
                     })
-            rs['home_place'] = rs['home_place'].astype(bool)
-
 
             ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
 
@@ -158,18 +138,6 @@ def make_clusters(cfg: DictConfig):
 
     ids_clusters_df.to_csv(save_data_folder + f"/clusters_{launch_time}.csv", index=False);
     clusterised_locs.to_csv(save_data_folder + f"/data_with_clusters_{launch_time}.csv");
-
-    if cfg.load_interests:
-        ids_interests = interests[interests['id'].isin(ID_LIST)].copy()
-        ids_interests.index = ids_interests['id']
-        ids_interests.drop(['id'], axis=1, inplace=True)
-        ids_interests.sort_index(inplace=True)
-        ids_interests.T.to_csv(save_data_folder + f"/selected_ids_interests_{launch_time}.csv");
-
-    if cfg.draw_map:
-        draw_map(save_data_folder, launch_time, cfg, log=log)
-
-
 
 if __name__ == "__main__":
     make_clusters()

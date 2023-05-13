@@ -41,7 +41,7 @@ dist_policy: 'const'
 only_hw: True
 min_sample_hw: 6
 min_sample_interest: 30
-max_dist: 60
+max_dist: 100
 model_params:
   algorithm: 'ball_tree'
   metric: 'haversine'
