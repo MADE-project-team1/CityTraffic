@@ -14,8 +14,6 @@ import hydra
 from omegaconf import OmegaConf, DictConfig, ListConfig
 import logging
 
-from draw import draw_map
-
 from tqdm import tqdm
 
 #gets cluster latlons and returns its center
@@ -130,7 +128,7 @@ def make_clusters(cfg: DictConfig):
                     'cluster': result_labels, 
                     'cluster_size': cluster_size,
                     })
-
+            
             ids_clusters_df = pd.concat([ids_clusters_df, rs], ignore_index=True)
 
         clusterised_locs = pd.concat([clusterised_locs, new_id_df], ignore_index=True)

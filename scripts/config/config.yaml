@@ -27,15 +27,10 @@ city_bbox:
 
 cluster_data_path: None
 only_weekday: False
-min_slots: 16
-number_of_slots: 48
 min_time_day_thresh: 21600
 min_days_thresh: 4
-slot_len: 30
-min_days: 5
+inq_thresh: 31000
 drop_noise: True
-home_b: 12
-home_t: 15
 
 model: DBSCAN
 dist_policy: 'const'
