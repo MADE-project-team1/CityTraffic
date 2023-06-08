@@ -19,7 +19,7 @@ def classify(cfg: DictConfig):
 
     #TODO: remove this block
     id_day_info = df.groupby('id')['log_date'].nunique()
-    good_id = id_day_info[id_day_info > 10].index
+    good_id = id_day_info[id_day_info >= cfg.min_days_thresh].index
     df = df[df['id'].isin(good_id)]
     cluster_data = cluster_data[cluster_data['id'].isin(good_id)]
 
