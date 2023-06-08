@@ -31,7 +31,15 @@ def clean(cfg: DictConfig):
         else:
             bounds = [0, np.inf]
 
-    locs = pd.read_csv(cfg.locs_path)
+    locs = pd.read_csv(cfg.locs_path,
+                        dtype={'lat' : 'float64',
+                                'lon' : 'float64',
+                                'cnt' : 'int32',
+                                'first_ts' : 'float64',
+                                'last_ts' : 'float64',
+                                'log_date' : str,
+                                'id' : str}).drop(
+        columns=['is_weekday', 'hour', 'source', 'dt'])
 
     if cfg.n_ids == -1:
         ID_LIST = pd.unique(locs['id'])
