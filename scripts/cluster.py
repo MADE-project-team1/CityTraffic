@@ -36,7 +36,16 @@ def make_clusters(cfg: DictConfig):
     os.mkdir(save_data_folder)
     rng = np.random.default_rng(seed=cfg.seed)
 
-    locs = pd.read_csv(cfg.cleaned_locs_path)
+    locs = pd.read_csv(cfg.cleaned_locs_path,
+                        dtype={'lat' : 'float64',
+                                'lon' : 'float64',
+                                'cnt' : 'int32',
+                                'first_ts' : 'float64',
+                                'last_ts' : 'float64',
+                                'length' : 'float64',
+                                'log_date' : str,
+                                'id' : str,
+                                })
 
     if isinstance(cfg.id_points_range, ListConfig):
         bounds = OmegaConf.to_container(cfg.id_points_range)
@@ -76,7 +85,7 @@ def make_clusters(cfg: DictConfig):
     start_global_time = time.time()
 
     #ids_clusters_df: DataFrame of all cluster centers
-    ids_clusters_df = pd.DataFrame({'id' : [], 'lat' : [], 'lon' : [], 'cluster' : []})
+    ids_clusters_df = pd.DataFrame(data={'id' : [], 'lat' : [], 'lon' : [], 'cluster' : []})
 
     #clusterised_locs: initial DataFrame with cluster labels assigned to every loc point
     clusterised_locs = pd.DataFrame(columns=columns)
@@ -94,7 +103,7 @@ def make_clusters(cfg: DictConfig):
             last_ts = row['last_ts']
             lats =  np.ones((cnt, 1)) * row['lat']
             lons =  np.ones((cnt, 1)) * row['lon']
-            ids = np.ones((cnt, 1)) * cur_id
+            ids = np.ones((cnt, 1)) * int(cur_id)
             points = np.linspace(first_ts, last_ts, cnt).reshape(((cnt, 1)))
             lengths = np.ones((cnt, 1)) * ((last_ts - first_ts) / cnt)
             values = np.hstack([lats, lons, points, ids, lengths])
