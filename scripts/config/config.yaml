@@ -30,7 +30,8 @@ cluster_data_path: None
 only_weekday: False
 min_time_day_thresh: 21600
 min_days_thresh: 4
-inq_thresh: 22000
+inq_thresh_top: 22000
+inq_thresh_bottom: 14000
 wd_all_thresh: 0.5
 drop_noise: True
 day_night_thresh: 0.33

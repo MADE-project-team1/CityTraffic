@@ -13,7 +13,8 @@ def classify(cfg: DictConfig):
     cluster_data = pd.read_csv(f"data\\{cfg.launch_time}\\clusters_{cfg.launch_time}.csv")
     df = pd.read_csv(f"data\\{cfg.launch_time}\\data_with_clusters_{cfg.launch_time}.csv", index_col=0)
 
-    INQ_THRESH = cfg.inq_thresh
+    INQ_THRESH_TOP = cfg.inq_thresh_top
+    INQ_THRESH_BOTTOM = cfg.inq_thresh_bottom
     WD_ALL_THRESH = cfg.wd_all_thresh
     SEC_IN_DAY = 60 * 60 * 24
 
@@ -78,7 +79,8 @@ def classify(cfg: DictConfig):
         cluster_data.loc[mask] = cluster_data.loc[mask].drop(columns=['inq', 'wd_rate', 'wd_all']).merge(features, on='cluster', how='left').values
     cluster_data.dropna(inplace=True)
 
-    cluster_data['work_place'] = (cluster_data['wd_all'] < WD_ALL_THRESH) | ((cluster_data['wd_all'] >= WD_ALL_THRESH) & (cluster_data['inq'] < INQ_THRESH))
+    cluster_data['work_place'] = (cluster_data['wd_all'] < WD_ALL_THRESH) | ((cluster_data['wd_all'] >= WD_ALL_THRESH)
+                                                                             & (cluster_data['inq'] < INQ_THRESH_TOP) & (cluster_data['inq'] > INQ_THRESH_BOTTOM))  
     cluster_data = cluster_data[cluster_data['inq'].between(cfg.low_filter_time, cfg.top_filter_time)]
     cluster_data.to_csv(f'data/{cfg.launch_time}/labeled_cluster_data_{cfg.launch_time}.csv')
 

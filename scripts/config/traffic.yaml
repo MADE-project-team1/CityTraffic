@@ -1,0 +1,4 @@
+locs_path: 'data/stupino_locs.csv'
+gh_matrix_prec: 16
+gh_bits_per_char: 2
+gh_interests_prec: 18
